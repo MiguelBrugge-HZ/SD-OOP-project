@@ -7,6 +7,7 @@ import Stage from '../Stage.js';
 import Category from './Category.js';
 import ChallengeElement from './ChallengeElement.js';
 import Animal from '../Animal.js';
+import ElementPosition from './ElementPosition.js';
 
 export default abstract class Challenge extends Stage {
   private readonly AMOUNT_OF_CATEGORIES: number;
@@ -45,7 +46,7 @@ export default abstract class Challenge extends Stage {
 
   private selectedElements: ChallengeElement[];
 
-  private positions: { posX: number, posY: number, contains: ChallengeElement }[];
+  private positions: ElementPosition[];
 
   protected nextDifficulty: string | null;
 
@@ -208,29 +209,18 @@ export default abstract class Challenge extends Stage {
    */
   private initiateElementPositions(): void {
     const challengeElements: ChallengeElement[] = this.getAllChallengeElements();
-
-    /**
-     * Randomize to put the elements in a random order
-     * Math.random is used because it is either between 0 to 1.
-     * Now the result will end up being -0.5 or 0.5
-    */
     challengeElements.sort(() => Math.random() - 0.5);
 
     let yPos: number = LostInTheForest.canvas.height * 0.28;
-    // Each row of the elements
+
     for (let i: number = 0; i < this.AMOUNT_OF_CATEGORIES; i++) {
       let xPos: number = LostInTheForest.canvas.width * 0.2;
-      // Each column of an element row
       for (let j: number = 0; j < this.AMOUNT_OF_ELEMENTS_PER_CATEGORY; j++) {
-        // Give the first element of the array a position
-        challengeElements[0]?.setPosX(xPos);
-        challengeElements[0]?.setPosY(yPos);
-        this.positions.push({
-          posX: xPos, posY: yPos,
-          contains: challengeElements[0] as ChallengeElement
-        });
-        // Remove this element from the array
-        challengeElements.shift();
+        const element = challengeElements.shift();
+
+        if (element) {
+          this.positions.push(new ElementPosition(xPos, yPos, element));
+        }
         xPos += LostInTheForest.canvas.width * 0.15;
       }
       yPos += LostInTheForest.canvas.height * 0.125;
@@ -304,39 +294,53 @@ export default abstract class Challenge extends Stage {
    * Put the completed categoryElements in its own row
    * @param category Completed category
    */
+  /**
+     * Put the completed categoryElements in its own row
+     * @param category Completed category
+     */
   private completeCategory(category: Category): void {
     this.completedCategories.push(category);
 
     const rowNumber: number = this.completedCategories.length - 1;
     const startingIndex: number = rowNumber * this.AMOUNT_OF_ELEMENTS_PER_CATEGORY;
-    const endIndex: number = startingIndex + this.AMOUNT_OF_ELEMENTS_PER_CATEGORY;
 
-    let currentElementIndex: number = 0;
-    for (let i: number = startingIndex; i < endIndex; i++) {
-      const position: { posX: number, posY: number, contains: ChallengeElement }
-        | undefined = this.positions[i];
-      if (position) {
-        const tempContains: ChallengeElement = position.contains;
-        // Remove from previous position
-        for (const pos of this.positions) {
-          if (pos.contains === category.getChallengeElements()[currentElementIndex]) {
-            pos.contains = tempContains;
-            pos.contains.setPosX(pos.posX);
-            pos.contains.setPosY(pos.posY);
-          }
+    // We no longer need this counter, we can use the index from the forEach below
+    // let currentElementIndex: number = 0; 
+
+    // Use a cleaner forEach loop on the elements and their corresponding indices in the completed category
+    category.getChallengeElements().forEach((winnerElement: ChallengeElement, categoryElementIndex: number) => {
+      // The index in the positions array that this winner should move to (the completed row spot)
+      const targetPositionIndex: number = startingIndex + categoryElementIndex;
+
+      // The target slot (where the winner will go)
+      const targetPositionSlot: ElementPosition | undefined = this.positions[targetPositionIndex];
+
+      if (targetPositionSlot) {
+        // 1. Identify the element currently occupying the target slot (the 'displaced' element)
+        const displacedElement: ChallengeElement = targetPositionSlot.getElement();
+
+        // 2. Find the slot where the 'winner' element is currently located (the 'old spot')
+        const oldPositionSlot: ElementPosition | undefined = this.positions.find(
+          (pos: ElementPosition) => pos.getElement() === winnerElement
+        );
+
+        if (oldPositionSlot) {
+          // --- PERFORM THE SWAP ---
+
+          // 3. Put the displaced element into the winner's old spot
+          // We use the new setElement method (or cast if setter wasn't added yet)
+          (oldPositionSlot as any).setElement(displacedElement);
+
+          // 4. Put the winner element into the target completed row spot
+          (targetPositionSlot as any).setElement(winnerElement);
+          targetPositionSlot.getElement().setTextColor(this.secondaryTextColor);
         }
+      }
+    });
 
-        // Give first row position a new element
-        position.contains =
-          category.getChallengeElements()[currentElementIndex] as ChallengeElement;
-        position.contains.setPosX(position.posX);
-        position.contains.setPosY(position.posY);
-        position.contains.setTextColor('pink');
-      }
-      currentElementIndex += 1;
-      if (this.completedCategories.length === this.AMOUNT_OF_CATEGORIES) {
-        this.isCompleted = true;
-      }
+    // Check for challenge completion outside the element loop
+    if (this.completedCategories.length === this.AMOUNT_OF_CATEGORIES) {
+      this.isCompleted = true;
     }
   }
 
